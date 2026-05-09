@@ -303,7 +303,7 @@ def build_stats_html(ticks_data, pnl_data, elapsed):
 # ─── SIMULATION RUNNER ────────────────────────────────────────────
 
 def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
-                   num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model, vllm_url,
+                   num_ticks, warmup_ticks, volatility, use_llm, api_key, hf_model, vllm_url,
                    progress=gr.Progress()):
     """Run the full simulation and return all visualization components."""
     print(f"DEBUG: Starting simulation - LLM: {use_llm}, URL: {vllm_url}")
@@ -327,11 +327,11 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
 
     engine = SimulationEngine(agents, config)
 
-    if use_llm and hf_token and engine.llm_client:
+    if use_llm and api_key and engine.llm_client:
         import openai
         engine.llm_client.client = openai.AsyncOpenAI(
             base_url=config.vllm_base_url,
-            api_key=hf_token,
+            api_key=api_key,
         )
 
     try:
@@ -340,20 +340,35 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # Ensure output directory exists for CSV generation
         os.makedirs(config.output_dir, exist_ok=True)
         
-        # Run the simulation fully without yielding intermediate plots to prevent UI flickering
+        # Generator for real-time updates
         print("DEBUG: Executing simulation loop...")
         for tick in engine.run_generator():
-            progress(tick / int(num_ticks), desc=f"Simulating market dynamics... {tick}/{num_ticks}")
+            # Throttle UI updates for smoother animation (especially for offline mode)
+            if not use_llm:
+                time.sleep(0.05)
+            
+            # Progress update
+            p_val = tick / int(num_ticks)
+            desc = f"Simulating market dynamics... {tick}/{num_ticks}"
+            
+            # Build current results for real-time display
+            ticks_data = engine.csv_rows
+            pnl_data = engine.agent_pnl_rows
+            
+            if ticks_data:
+                main_chart = build_main_chart(ticks_data)
+                pnl_chart = build_pnl_chart(pnl_data, agents)
+                leaderboard = build_leaderboard(pnl_data, ticks_data)
+                stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
+                
+                yield main_chart, pnl_chart, leaderboard, stats_html, None
         
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
-        # Build final results
+        # Final build
         ticks_data = engine.csv_rows
         pnl_data = engine.agent_pnl_rows
         
-        if not ticks_data:
-            raise ValueError("No data produced during simulation.")
-
         main_chart = build_main_chart(ticks_data)
         pnl_chart = build_pnl_chart(pnl_data, agents)
         leaderboard = build_leaderboard(pnl_data, ticks_data)
@@ -366,7 +381,7 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # After simulation is done, write CSVs
         engine._write_csvs()
         
-        return main_chart, pnl_chart, leaderboard, stats_html, export_path
+        yield main_chart, pnl_chart, leaderboard, stats_html, export_path
     except Exception as e:
         print(f"CRITICAL ERROR in run_simulation: {str(e)}")
         import traceback
@@ -532,21 +547,48 @@ def create_app():
             with gr.Column(scale=1, min_width=280):
 
                 gr.HTML('<div class="panel-header">⚙ Engine</div>')
+                engine_preset = gr.Radio(
+                    ["AMD Cloud (vLLM)", "Groq (Demo Mode)"],
+                    label="Infrastructure Preset",
+                    value="AMD Cloud (vLLM)"
+                )
+                
                 use_llm = gr.Checkbox(label="Live LLM Mode", value=False,
-                                      info="Use HF Serverless API for live inference")
-                hf_token = gr.Textbox(label="HF Token", type="password",
-                                      placeholder="hf_...", visible=False)
+                                      info="Use external API for live inference")
+                
+                api_key = gr.Textbox(label="API Key", type="password",
+                                      placeholder="hf_... or gsk_...", visible=False)
+                
                 hf_model = gr.Textbox(label="Model ID", value="Qwen/Qwen2.5-7B-Instruct",
                                       visible=False)
+                
                 vllm_url = gr.Textbox(label="Inference Base URL", 
                                       value="https://api-inference.huggingface.co/v1",
                                       placeholder="http://YOUR_AMD_IP:8000/v1",
                                       visible=False)
 
+                def update_preset(preset):
+                    if preset == "Groq (Demo Mode)":
+                        return (
+                            gr.update(value="llama3-8b-8192"), 
+                            gr.update(value="https://api.groq.com/openai/v1")
+                        )
+                    else:
+                        return (
+                            gr.update(value="Qwen/Qwen2.5-7B-Instruct"),
+                            gr.update(value="https://api-inference.huggingface.co/v1")
+                        )
+
+                engine_preset.change(
+                    fn=update_preset,
+                    inputs=[engine_preset],
+                    outputs=[hf_model, vllm_url]
+                )
+
                 use_llm.change(
                     lambda v: (gr.update(visible=v), gr.update(visible=v), gr.update(visible=v)),
                     inputs=[use_llm],
-                    outputs=[hf_token, hf_model, vllm_url],
+                    outputs=[api_key, hf_model, vllm_url],
                 )
 
                 gr.HTML('<div class="panel-header">🧬 Agent Composition</div>')
@@ -589,7 +631,7 @@ def create_app():
         run_btn.click(
             fn=run_simulation,
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
-                    num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model, vllm_url],
+                    num_ticks, warmup_ticks, volatility, use_llm, api_key, hf_model, vllm_url],
             outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file],
         )
 

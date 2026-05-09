@@ -256,8 +256,7 @@ class SimulationEngine:
     def _offline_agent_logic(self, agent: BaseAgent, mid: float) -> list[Order]:
         """Generate orders using simple heuristics matching each agent's charter."""
         orders: list[Order] = []
-        # Prepend a cancel order so offline heuristics don't infinitely stack orders
-        orders.append(Order(agent.agent_id, "cancel", 1.0, 1, self.tick))
+        # No more mandatory cancel order at start - allow persistence
 
         prices = agent.price_history[-10:] if agent.price_history else [mid]
 
@@ -299,6 +298,8 @@ class SimulationEngine:
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(5, 10), self.tick))
 
         elif agent_type == "MarketMaker":
+            # Market Maker manages its own cancellations to keep a tight spread
+            orders.append(Order(agent.agent_id, "cancel", 1.0, 1, self.tick))
             # Always post both sides
             bid_price = round(mid * 0.998, 2) # Tighter spread
             ask_price = round(mid * 1.002, 2) # Tighter spread

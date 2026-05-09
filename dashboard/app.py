@@ -124,7 +124,7 @@ def run_simulation_and_play(n_mom, n_mr, n_fund, n_noise, n_mm, num_ticks, playb
 
         # Render charts every N ticks to save Streamlit rendering time (if very fast)
         # or every tick if speed allows.
-        price_fig = plot_price_chart(curr_ticks, curr_prices, fair_value=100.0)
+        price_fig = plot_price_chart(curr_ticks, curr_prices, true_fair_values=[100.0] * len(curr_ticks))
         price_placeholder.plotly_chart(price_fig, use_container_width=True, key=f"p_{t}")
 
         spread_fig = plot_spread(curr_ticks, curr_spreads)
