@@ -109,12 +109,10 @@ class SimulationEngine:
         finally:
             loop.close()
 
-        if self.config.log_to_csv:
-            self._write_csvs()
-
-        self._print_summary()
-
-    async def _run_async(self):
+        # After simulation is done, write CSVs
+        engine._write_csvs()
+        
+        return main_chart, pnl_chart, leaderboard, stats_html, export_path
         """Async tick loop (Legacy)."""
         for tick in range(1, self.config.num_ticks + 1):
             await self._tick_logic(tick)
@@ -273,10 +271,10 @@ class SimulationEngine:
                 trend = prices[-1] - prices[-3]
                 if trend > 0.1:
                     price = round(self.book.best_ask * 1.002 if self.book.best_ask else mid * 1.003, 2)
-                    orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 5), self.tick))
+                    orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(5, 15), self.tick))
                 elif trend < -0.1:
                     price = round(self.book.best_bid * 0.998 if self.book.best_bid else mid * 0.997, 2)
-                    orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 5), self.tick))
+                    orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(5, 15), self.tick))
 
         elif agent_type == "MeanReversion":
             if len(prices) >= 5:
@@ -286,10 +284,10 @@ class SimulationEngine:
                 z = (mid - mean) / std if std > 0 else 0
                 if z > 1.5:
                     price = round(self.book.best_bid * 0.998 if self.book.best_bid else mid * 0.997, 2)
-                    orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 4), self.tick))
+                    orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(5, 10), self.tick))
                 elif z < -1.5:
                     price = round(self.book.best_ask * 1.002 if self.book.best_ask else mid * 1.003, 2)
-                    orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 4), self.tick))
+                    orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(5, 10), self.tick))
 
         elif agent_type == "Fundamental":
             from agents.fundamental_agent import FundamentalAgent
@@ -298,30 +296,32 @@ class SimulationEngine:
                 gap = (mid - fv) / fv
                 if gap < -0.03:
                     price = round(self.book.best_ask * 1.001 if self.book.best_ask else mid * 1.003, 2)
-                    orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 3), self.tick))
+                    orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(5, 10), self.tick))
                 elif gap > 0.03:
                     price = round(self.book.best_bid * 0.999 if self.book.best_bid else mid * 0.997, 2)
-                    orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 3), self.tick))
+                    orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(5, 10), self.tick))
 
         elif agent_type == "MarketMaker":
             # Always post both sides
             bid_price = round(mid * 0.998, 2) # Tighter spread
             ask_price = round(mid * 1.002, 2) # Tighter spread
-            qty = 10
+            qty = 20
             if abs(agent.state.position) > 20:
-                qty = 5  # reduce size when inventory is large
+                qty = 10  # reduce size when inventory is large
             orders.append(Order(agent.agent_id, Side.BUY, bid_price, qty, self.tick))
             orders.append(Order(agent.agent_id, Side.SELL, ask_price, qty, self.tick))
 
         elif agent_type == "NoiseTrader":
-            # Random action
-            action = random.choice(["buy", "sell", "hold"])
+            # Very aggressive random action to stir the market
+            action = random.choice(["buy", "sell"]) # No more 'hold'
             if action == "buy":
-                price = round(self.book.best_ask * 1.001 if self.book.best_ask else mid * 1.002, 2)
-                orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 5), self.tick))
-            elif action == "sell":
-                price = round(self.book.best_bid * 0.999 if self.book.best_bid else mid * 0.998, 2)
-                orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 5), self.tick))
+                # Buy at a slight premium to hit the ask
+                price = round(mid * random.uniform(1.001, 1.006), 2)
+                orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(5, 20), self.tick))
+            else:
+                # Sell at a slight discount to hit the bid
+                price = round(mid * random.uniform(0.994, 0.999), 2)
+                orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(5, 20), self.tick))
 
         return orders
 
@@ -404,13 +404,17 @@ class SimulationEngine:
 
     def _record_csv_row(self, tick: int, metrics: TickMetrics, trades: list[Trade]):
         """Record a row for the tick-level CSV."""
+        # Update true fair value with a random walk (Market Stirring)
+        drift = random.uniform(-0.02, 0.02)
+        self.true_fair_value = round(self.true_fair_value + drift, 2)
+
         # Use mid_price if available, else last known price
         current_price = metrics.mid_price if metrics.mid_price else self.price_history[-1]
         
         self.csv_rows.append({
             "tick": tick,
             "price": current_price,
-            "mid_price": current_price, # keep for compat
+            "mid_price": current_price,
             "best_bid": metrics.best_bid,
             "best_ask": metrics.best_ask,
             "spread": metrics.spread,
@@ -421,7 +425,6 @@ class SimulationEngine:
         })
 
         # Agent PnL snapshot
-        current_price = metrics.mid_price or self.config.initial_price
         for agent in self.agents:
             self.agent_pnl_rows.append({
                 "tick": tick,

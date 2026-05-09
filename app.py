@@ -366,7 +366,7 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # After simulation is done, write CSVs
         engine._write_csvs()
         
-        yield main_chart, pnl_chart, leaderboard, stats_html, export_path
+        return main_chart, pnl_chart, leaderboard, stats_html, export_path
     except Exception as e:
         print(f"CRITICAL ERROR in run_simulation: {str(e)}")
         import traceback
