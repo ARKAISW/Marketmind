@@ -302,7 +302,7 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         log_to_csv=False,
         base_volatility=volatility,
         warmup_ticks=int(warmup_ticks),
-        enable_seed_liquidity=False,
+        enable_seed_liquidity=True, 
         fee_per_trade=0.01
     )
 

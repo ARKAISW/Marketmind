@@ -272,10 +272,10 @@ class SimulationEngine:
             if len(prices) >= 3:
                 trend = prices[-1] - prices[-3]
                 if trend > 0.1:
-                    price = round(mid * 1.002, 2)
+                    price = round(mid * 1.003, 2) # More aggressive
                     orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 5), self.tick))
                 elif trend < -0.1:
-                    price = round(mid * 0.998, 2)
+                    price = round(mid * 0.997, 2) # More aggressive
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 5), self.tick))
 
         elif agent_type == "MeanReversion":
@@ -285,10 +285,10 @@ class SimulationEngine:
                 std = math.sqrt(variance) if variance > 0 else 0.01
                 z = (mid - mean) / std if std > 0 else 0
                 if z > 1.5:
-                    price = round(mid * 0.998, 2)
+                    price = round(mid * 0.997, 2)
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 4), self.tick))
                 elif z < -1.5:
-                    price = round(mid * 1.002, 2)
+                    price = round(mid * 1.003, 2)
                     orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 4), self.tick))
 
         elif agent_type == "Fundamental":
@@ -297,19 +297,19 @@ class SimulationEngine:
                 fv = agent.fair_value
                 gap = (mid - fv) / fv
                 if gap < -0.03:
-                    price = round(mid * 1.001, 2)
+                    price = round(mid * 1.003, 2)
                     orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 3), self.tick))
                 elif gap > 0.03:
-                    price = round(mid * 0.999, 2)
+                    price = round(mid * 0.997, 2)
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 3), self.tick))
 
         elif agent_type == "MarketMaker":
             # Always post both sides
-            bid_price = round(mid * 0.995, 2)
-            ask_price = round(mid * 1.005, 2)
-            qty = 5
+            bid_price = round(mid * 0.998, 2) # Tighter spread
+            ask_price = round(mid * 1.002, 2) # Tighter spread
+            qty = 10
             if abs(agent.state.position) > 20:
-                qty = 2  # reduce size when inventory is large
+                qty = 5  # reduce size when inventory is large
             orders.append(Order(agent.agent_id, Side.BUY, bid_price, qty, self.tick))
             orders.append(Order(agent.agent_id, Side.SELL, ask_price, qty, self.tick))
 
