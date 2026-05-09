@@ -109,11 +109,8 @@ class SimulationEngine:
         finally:
             loop.close()
 
-        # After simulation is done, write CSVs
-        engine._write_csvs()
-        
-        return main_chart, pnl_chart, leaderboard, stats_html, export_path
-        """Async tick loop (Legacy)."""
+    async def _run_async(self):
+        """Async tick loop."""
         for tick in range(1, self.config.num_ticks + 1):
             await self._tick_logic(tick)
 
