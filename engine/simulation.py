@@ -209,8 +209,12 @@ class SimulationEngine:
         Uses offline mode during warmup_ticks, then switches to LLM.
         """
         if self.config.use_llm and self.tick > self.config.warmup_ticks:
+            print(f"DEBUG: Tick {self.tick} - DISPATCHING LLM AGENTS (Model: {self.config.vllm_model})")
             return await self._dispatch_llm()
         else:
+            mode = "WARMUP" if self.config.use_llm else "OFFLINE"
+            if self.tick % 10 == 0 or self.tick == 1:
+                print(f"DEBUG: Tick {self.tick} - Dispatching {mode} agents")
             return self._dispatch_offline()
 
     # ── LLM mode ──────────────────────────────────────────────────
@@ -402,10 +406,6 @@ class SimulationEngine:
 
     def _record_csv_row(self, tick: int, metrics: TickMetrics, trades: list[Trade]):
         """Record a row for the tick-level CSV."""
-        # Update true fair value with a random walk (Market Stirring)
-        drift = random.uniform(-0.02, 0.02)
-        self.true_fair_value = round(self.true_fair_value + drift, 2)
-
         # Use mid_price if available, else last known price
         current_price = metrics.mid_price if metrics.mid_price else self.price_history[-1]
         

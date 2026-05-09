@@ -338,13 +338,10 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         os.makedirs(config.output_dir, exist_ok=True)
         
         # Generator for real-time updates
-        print("DEBUG: Executing simulation loop...")
+        print(f"DEBUG: Executing simulation loop - LLM Mode: {use_llm}")
         for tick in engine.run_generator():
-            # Throttled UI updates (every 2 ticks) for smoother animation and better browser performance
-            if tick % 2 == 0 or tick == int(num_ticks):
-                # Progress update
-                desc = f"Simulating market dynamics... {tick}/{num_ticks}"
-                
+            # Throttled UI updates (every 5 ticks for efficiency)
+            if tick % 5 == 0 or tick == 1 or tick == int(num_ticks):
                 # Build current results for real-time display
                 ticks_data = engine.csv_rows
                 pnl_data = engine.agent_pnl_rows
@@ -357,8 +354,8 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
                     
                     yield main_chart, pnl_chart, leaderboard, stats_html, None
                 
-                # Small sleep to allow Gradio's websocket to flush the update
-                time.sleep(0.01)
+                # IMPORTANT: Significant sleep to ensure the UI has time to render the live state
+                time.sleep(0.2)
         
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
