@@ -566,7 +566,7 @@ def create_app():
                 def update_preset(preset):
                     if preset == "Groq (Demo Mode)":
                         return (
-                            gr.update(value="llama3-8b-8192"), 
+                            gr.update(value="llama-3.1-8b-instant"), 
                             gr.update(value="https://api.groq.com/openai/v1")
                         )
                     else:
