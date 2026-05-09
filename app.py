@@ -97,17 +97,22 @@ def build_main_chart(ticks_data):
                      "Trending": "rgba(255,170,0,0.06)",
                      "Volatile": "rgba(255,51,102,0.06)",
                      "Crashed": "rgba(255,0,0,0.10)"}
-    prev_regime = regimes[0] if regimes else "Efficient"
-    band_start = ticks[0] if ticks else 0
-    for i, (t, reg) in enumerate(zip(ticks, regimes)):
-        if reg != prev_regime or i == len(ticks) - 1:
-            fig.add_vrect(
-                x0=band_start, x1=t,
-                fillcolor=regime_colors.get(prev_regime, "rgba(0,0,0,0)"),
-                layer="below", line_width=0, row=1, col=1,
-            )
-            band_start = t
-            prev_regime = reg
+    # Optimized Regime Bands (calculate once)
+    regimes = [t["regime"] for t in ticks_data]
+    ticks = [t["tick"] for t in ticks_data]
+    
+    if regimes:
+        prev_regime = regimes[0]
+        band_start = ticks[0]
+        for i in range(1, len(regimes)):
+            if regimes[i] != prev_regime or i == len(regimes) - 1:
+                fig.add_vrect(
+                    x0=band_start, x1=ticks[i],
+                    fillcolor=regime_colors.get(prev_regime, "rgba(0,0,0,0)"),
+                    layer="below", line_width=0, row=1, col=1,
+                )
+                band_start = ticks[i]
+                prev_regime = regimes[i]
 
     # Volume bars
     fig.add_trace(go.Bar(
@@ -340,8 +345,10 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # Generator for real-time updates
         print(f"DEBUG: Executing simulation loop - LLM Mode: {use_llm}")
         for tick in engine.run_generator():
-            # Throttled UI updates (every 5 ticks for efficiency)
-            if tick % 5 == 0 or tick == 1 or tick == int(num_ticks):
+            # Throttled UI updates (every 10 ticks for maximum smoothness and 'cinematic' feel)
+            is_llm_tick = use_llm and tick > int(warmup_ticks)
+            
+            if tick % 10 == 0 or tick == 1 or tick == int(num_ticks):
                 # Build current results for real-time display
                 ticks_data = engine.csv_rows
                 pnl_data = engine.agent_pnl_rows
@@ -359,8 +366,12 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
                     
                     yield main_chart, pnl_chart, leaderboard, stats_html, None, status_msg
                 
-                # IMPORTANT: Significant sleep to ensure the UI has time to render the live state
-                time.sleep(0.4) 
+                # IMPORTANT: Significant sleep on heuristic ticks to allow Gradio websocket to flush.
+                # 0.5s creates a smooth, readable 'cinematic' update.
+                if not is_llm_tick:
+                    time.sleep(0.5) 
+                else:
+                    time.sleep(0.01) # LLM is naturally slow enough
         
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
@@ -627,6 +638,7 @@ def create_app():
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
                     num_ticks, warmup_ticks, volatility, use_llm, api_key, hf_model, vllm_url],
             outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file, live_status],
+            show_progress="hidden"
         )
 
     return app
