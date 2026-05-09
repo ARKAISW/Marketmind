@@ -44,6 +44,7 @@ def main():
     parser.add_argument("--llm", action="store_true", help="Use vLLM inference (requires server)")
     parser.add_argument("--url", type=str, default="http://localhost:8000/v1", help="vLLM server URL")
     parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-7B-Instruct", help="Model name")
+    parser.add_argument("--api-key", type=str, default="EMPTY", help="API Key for Hugging Face Serverless or other secured endpoints")
     parser.add_argument("--output", type=str, default="output", help="Output directory for CSVs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     args = parser.parse_args()
@@ -54,6 +55,7 @@ def main():
         use_llm=args.llm,
         vllm_base_url=args.url,
         vllm_model=args.model,
+        vllm_api_key=args.api_key,
         output_dir=args.output,
         seed=args.seed,
     )

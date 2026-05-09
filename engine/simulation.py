@@ -37,6 +37,7 @@ class SimulationConfig:
     use_llm: bool = False          # False = offline deterministic mode
     vllm_base_url: str = "http://localhost:8000/v1"
     vllm_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    vllm_api_key: str = "EMPTY"    # For HF serverless or secured endpoints
     output_dir: str = "output"
     seed: int = 42
     log_to_csv: bool = True
@@ -67,6 +68,7 @@ class SimulationEngine:
         if config.use_llm:
             self.llm_client = VLLMClient(
                 base_url=config.vllm_base_url,
+                api_key=config.vllm_api_key,
                 model=config.vllm_model,
             )
 
