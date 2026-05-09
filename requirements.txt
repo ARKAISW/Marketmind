@@ -1,0 +1,14 @@
+# MarketMind — Dependencies
+# Core
+openai>=1.0.0          # vLLM OpenAI-compatible client
+
+# Dashboard
+gradio>=4.0.0
+plotly>=5.18.0
+
+# Data
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Utilities
+sortedcontainers>=2.4.0  # SortedList for order book
