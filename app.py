@@ -129,7 +129,7 @@ def build_main_chart(ticks_data):
 
     # Layout
     # Add minimal range to avoid the "zoomed in on noise" look
-    prices_only = [t["price"] for t in ticks_data]
+    prices_only = [t["price"] for t in ticks_data] if ticks_data else [100.0]
     min_p, max_p = min(prices_only), max(prices_only)
     if max_p - min_p < 1.0:
         center = (max_p + min_p) / 2
@@ -334,36 +334,44 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
             api_key=hf_token,
         )
 
-    t0 = time.time()
-    
-    # Ensure output directory exists for CSV generation
-    os.makedirs(config.output_dir, exist_ok=True)
-    
-    # Run the simulation fully without yielding intermediate plots to prevent UI flickering
-    print("DEBUG: Executing simulation loop...")
-    for tick in engine.run_generator():
-        progress(tick / int(num_ticks), desc=f"Simulating market dynamics... {tick}/{num_ticks}")
-    
-    print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
-    
-    # Build final results
-    ticks_data = engine.csv_rows
-    pnl_data = engine.agent_pnl_rows
-    
-    main_chart = build_main_chart(ticks_data)
-    pnl_chart = build_pnl_chart(pnl_data, agents)
-    leaderboard = build_leaderboard(pnl_data, ticks_data)
-    stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
-    
-    # Create temporary export file
-    export_path = "marketmind_simulation.csv"
-    pd.DataFrame(ticks_data).to_csv(export_path, index=False)
-    
-    # After simulation is done, write CSVs
-    engine._write_csvs()
-    
-    # Final yield
-    yield main_chart, pnl_chart, leaderboard, stats_html, export_path
+    try:
+        t0 = time.time()
+        
+        # Ensure output directory exists for CSV generation
+        os.makedirs(config.output_dir, exist_ok=True)
+        
+        # Run the simulation fully without yielding intermediate plots to prevent UI flickering
+        print("DEBUG: Executing simulation loop...")
+        for tick in engine.run_generator():
+            progress(tick / int(num_ticks), desc=f"Simulating market dynamics... {tick}/{num_ticks}")
+        
+        print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
+        
+        # Build final results
+        ticks_data = engine.csv_rows
+        pnl_data = engine.agent_pnl_rows
+        
+        if not ticks_data:
+            raise ValueError("No data produced during simulation.")
+
+        main_chart = build_main_chart(ticks_data)
+        pnl_chart = build_pnl_chart(pnl_data, agents)
+        leaderboard = build_leaderboard(pnl_data, ticks_data)
+        stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
+        
+        # Create temporary export file
+        export_path = "marketmind_simulation.csv"
+        pd.DataFrame(ticks_data).to_csv(export_path, index=False)
+        
+        # After simulation is done, write CSVs
+        engine._write_csvs()
+        
+        yield main_chart, pnl_chart, leaderboard, stats_html, export_path
+    except Exception as e:
+        print(f"CRITICAL ERROR in run_simulation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise gr.Error(f"Simulation Failed: {str(e)}")
 
 
 # ─── CUSTOM CSS ───────────────────────────────────────────────────
