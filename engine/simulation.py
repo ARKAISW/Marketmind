@@ -272,10 +272,10 @@ class SimulationEngine:
             if len(prices) >= 3:
                 trend = prices[-1] - prices[-3]
                 if trend > 0.1:
-                    price = round(mid * 1.003, 2) # More aggressive
+                    price = round(self.book.best_ask * 1.002 if self.book.best_ask else mid * 1.003, 2)
                     orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 5), self.tick))
                 elif trend < -0.1:
-                    price = round(mid * 0.997, 2) # More aggressive
+                    price = round(self.book.best_bid * 0.998 if self.book.best_bid else mid * 0.997, 2)
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 5), self.tick))
 
         elif agent_type == "MeanReversion":
@@ -285,10 +285,10 @@ class SimulationEngine:
                 std = math.sqrt(variance) if variance > 0 else 0.01
                 z = (mid - mean) / std if std > 0 else 0
                 if z > 1.5:
-                    price = round(mid * 0.997, 2)
+                    price = round(self.book.best_bid * 0.998 if self.book.best_bid else mid * 0.997, 2)
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 4), self.tick))
                 elif z < -1.5:
-                    price = round(mid * 1.003, 2)
+                    price = round(self.book.best_ask * 1.002 if self.book.best_ask else mid * 1.003, 2)
                     orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 4), self.tick))
 
         elif agent_type == "Fundamental":
@@ -297,10 +297,10 @@ class SimulationEngine:
                 fv = agent.fair_value
                 gap = (mid - fv) / fv
                 if gap < -0.03:
-                    price = round(mid * 1.003, 2)
+                    price = round(self.book.best_ask * 1.001 if self.book.best_ask else mid * 1.003, 2)
                     orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 3), self.tick))
                 elif gap > 0.03:
-                    price = round(mid * 0.997, 2)
+                    price = round(self.book.best_bid * 0.999 if self.book.best_bid else mid * 0.997, 2)
                     orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 3), self.tick))
 
         elif agent_type == "MarketMaker":
@@ -317,10 +317,10 @@ class SimulationEngine:
             # Random action
             action = random.choice(["buy", "sell", "hold"])
             if action == "buy":
-                price = round(mid * random.uniform(0.995, 1.005), 2)
+                price = round(self.book.best_ask * 1.001 if self.book.best_ask else mid * 1.002, 2)
                 orders.append(Order(agent.agent_id, Side.BUY, price, random.randint(1, 5), self.tick))
             elif action == "sell":
-                price = round(mid * random.uniform(0.995, 1.005), 2)
+                price = round(self.book.best_bid * 0.999 if self.book.best_bid else mid * 0.998, 2)
                 orders.append(Order(agent.agent_id, Side.SELL, price, random.randint(1, 5), self.tick))
 
         return orders

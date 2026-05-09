@@ -128,6 +128,13 @@ def build_main_chart(ticks_data):
     ), row=3, col=1)
 
     # Layout
+    # Add minimal range to avoid the "zoomed in on noise" look
+    prices_only = [t["price"] for t in ticks_data]
+    min_p, max_p = min(prices_only), max(prices_only)
+    if max_p - min_p < 1.0:
+        center = (max_p + min_p) / 2
+        min_p, max_p = center - 0.5, center + 0.5
+
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor=COLORS["bg"],
@@ -143,6 +150,12 @@ def build_main_chart(ticks_data):
         ),
         showlegend=True,
     )
+    
+    # Force Y axis range on the price plot (row 1)
+    fig.update_yaxes(range=[min_p * 0.998, max_p * 1.002], row=1, col=1)
+    
+    # Hide plotly modebar tools for cleaner UI
+    fig.update_layout(modebar_remove=['zoom', 'pan', 'select', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'])
 
     for row in range(1, 4):
         fig.update_xaxes(
@@ -199,6 +212,8 @@ def build_pnl_chart(pnl_data, agents):
 
     # Zero line
     fig.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.15)", line_width=1)
+    fig.update_layout(dragmode=False, hovermode="x unified")
+    fig.update_layout(modebar_orientation='h', modebar_remove=['zoom', 'pan', 'select', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'])
 
     return fig
 
@@ -324,33 +339,27 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
     # Ensure output directory exists for CSV generation
     os.makedirs(config.output_dir, exist_ok=True)
     
-    # Initialize empty outputs
-    main_chart = None
-    pnl_chart = None
-    leaderboard = pd.DataFrame()
-    stats_html = "<p>Running...</p>"
-    
-    # Use generator to yield live updates
+    # Run the simulation fully without yielding intermediate plots to prevent UI flickering
+    print("DEBUG: Executing simulation loop...")
     for tick in engine.run_generator():
-        progress(tick / int(num_ticks), desc=f"Running tick {tick}/{num_ticks}...")
-        
-        # Only yield UI updates every 10 ticks to prevent Gradio blocking
-        if tick % 10 == 0 or tick == int(num_ticks):
-            ticks_data = engine.csv_rows
-            pnl_data = engine.agent_pnl_rows
-            
-            main_chart = build_main_chart(ticks_data)
-            pnl_chart = build_pnl_chart(pnl_data, agents)
-            leaderboard = build_leaderboard(pnl_data, ticks_data)
-            stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
-            
-            # Create temporary export file
-            export_path = "marketmind_simulation.csv"
-            pd.DataFrame(ticks_data).to_csv(export_path, index=False)
-            
-            yield main_chart, pnl_chart, leaderboard, stats_html, export_path
-
-    # After simulation is done, write CSVs and update files
+        progress(tick / int(num_ticks), desc=f"Simulating market dynamics... {tick}/{num_ticks}")
+    
+    print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
+    
+    # Build final results
+    ticks_data = engine.csv_rows
+    pnl_data = engine.agent_pnl_rows
+    
+    main_chart = build_main_chart(ticks_data)
+    pnl_chart = build_pnl_chart(pnl_data, agents)
+    leaderboard = build_leaderboard(pnl_data, ticks_data)
+    stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
+    
+    # Create temporary export file
+    export_path = "marketmind_simulation.csv"
+    pd.DataFrame(ticks_data).to_csv(export_path, index=False)
+    
+    # After simulation is done, write CSVs
     engine._write_csvs()
     
     # Final yield
