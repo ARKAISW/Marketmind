@@ -547,10 +547,11 @@ def create_app():
             with gr.Column(scale=1, min_width=280):
 
                 gr.HTML('<div class="panel-header">⚙ Engine</div>')
-                use_llm = gr.Checkbox(label="Live LLM Mode", value=False,
-                                      info="Use external API for live inference")
                 
-                with gr.Group(visible=False) as llm_settings:
+                use_llm = gr.Checkbox(label="Live LLM Mode", value=False,
+                                      info="Check this to use external API for live inference")
+
+                with gr.Accordion("Live LLM Settings (Click to Expand)", open=False):
                     engine_preset = gr.Radio(
                         ["AMD Cloud (vLLM)", "Groq (Demo Mode)"],
                         label="Infrastructure Preset",
@@ -579,15 +580,6 @@ def create_app():
                     fn=update_preset,
                     inputs=[engine_preset],
                     outputs=[hf_model, vllm_url]
-                )
-
-                def toggle_llm(is_active):
-                    return gr.update(visible=is_active)
-
-                use_llm.change(
-                    fn=toggle_llm,
-                    inputs=[use_llm],
-                    outputs=[llm_settings]
                 )
 
                 gr.HTML('<div class="panel-header">🧬 Agent Composition</div>')

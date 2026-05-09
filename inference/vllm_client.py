@@ -117,7 +117,7 @@ class VLLMClient:
         api_key: str = "EMPTY",
         model: str = "Qwen/Qwen2.5-7B-Instruct",
         max_tokens: int = 64,
-        temperature: float = 0.3,
+        temperature: float = 0.8,
     ):
         self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model = model
