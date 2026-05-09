@@ -284,9 +284,11 @@ def build_stats_html(ticks_data, pnl_data, elapsed):
 # ─── SIMULATION RUNNER ────────────────────────────────────────────
 
 def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
-                   num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model,
+                   num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model, vllm_url,
                    progress=gr.Progress()):
     """Run the full simulation and return all visualization components."""
+    print(f"DEBUG: Starting simulation - LLM: {use_llm}, URL: {vllm_url}")
+    
     agents = build_agents(int(n_mom), int(n_mr), int(n_fund), int(n_noise), int(n_mm))
     if not agents:
         raise gr.Error("Add at least one agent to run the simulation.")
@@ -295,12 +297,12 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         num_ticks=int(num_ticks),
         initial_price=100.0,
         use_llm=use_llm,
-        vllm_base_url="https://api-inference.huggingface.co/v1" if use_llm else "http://localhost:8000/v1",
-        vllm_model=hf_model if use_llm else "Qwen/Qwen2.5-7B-Instruct",
+        vllm_base_url=vllm_url if vllm_url else "https://api-inference.huggingface.co/v1",
+        vllm_model=hf_model if hf_model else "Qwen/Qwen2.5-7B-Instruct",
         log_to_csv=False,
         base_volatility=volatility,
         warmup_ticks=int(warmup_ticks),
-        enable_seed_liquidity=False, # pure LLM market
+        enable_seed_liquidity=False,
         fee_per_trade=0.01
     )
 
@@ -494,13 +496,17 @@ def create_app():
                                       info="Use HF Serverless API for live inference")
                 hf_token = gr.Textbox(label="HF Token", type="password",
                                       placeholder="hf_...", visible=False)
-                hf_model = gr.Textbox(label="Model", value="meta-llama/Llama-3.2-3B-Instruct",
+                hf_model = gr.Textbox(label="Model ID", value="Qwen/Qwen2.5-7B-Instruct",
+                                      visible=False)
+                vllm_url = gr.Textbox(label="Inference Base URL", 
+                                      value="https://api-inference.huggingface.co/v1",
+                                      placeholder="http://YOUR_AMD_IP:8000/v1",
                                       visible=False)
 
                 use_llm.change(
-                    lambda v: (gr.update(visible=v), gr.update(visible=v)),
+                    lambda v: (gr.update(visible=v), gr.update(visible=v), gr.update(visible=v)),
                     inputs=[use_llm],
-                    outputs=[hf_token, hf_model],
+                    outputs=[hf_token, hf_model, vllm_url],
                 )
 
                 gr.HTML('<div class="panel-header">🧬 Agent Composition</div>')
@@ -540,7 +546,7 @@ def create_app():
         run_btn.click(
             fn=run_simulation,
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
-                    num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model],
+                    num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model, vllm_url],
             outputs=[main_chart, pnl_chart, leaderboard, stats_panel],
         )
 
