@@ -168,6 +168,7 @@ class VLLMClient:
 
         except Exception as e:
             latency_ms = (time.perf_counter() - t0) * 1000
+            print(f"LLM API Error for {self.model}: {e}")
             return LLMResponse(
                 action="hold", price=0.0, quantity=0,
                 raw_text=f"ERROR: {e}", latency_ms=latency_ms, success=False,

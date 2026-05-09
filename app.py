@@ -308,6 +308,9 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
     """Run the full simulation and return all visualization components."""
     print(f"DEBUG: Starting simulation - LLM: {use_llm}, URL: {vllm_url}")
     
+    if use_llm and not api_key.strip():
+        raise gr.Error("API Key is required when Live LLM Mode is enabled. Please expand 'Live LLM Settings' and provide your key.")
+
     agents = build_agents(int(n_mom), int(n_mr), int(n_fund), int(n_noise), int(n_mm))
     if not agents:
         raise gr.Error("Add at least one agent to run the simulation.")
@@ -318,6 +321,7 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         use_llm=use_llm,
         vllm_base_url=vllm_url if vllm_url else "https://api-inference.huggingface.co/v1",
         vllm_model=hf_model if hf_model else "Qwen/Qwen2.5-7B-Instruct",
+        vllm_api_key=api_key if api_key else "EMPTY",
         log_to_csv=False,
         base_volatility=volatility,
         warmup_ticks=int(warmup_ticks),
@@ -326,13 +330,6 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
     )
 
     engine = SimulationEngine(agents, config)
-
-    if use_llm and api_key and engine.llm_client:
-        import openai
-        engine.llm_client.client = openai.AsyncOpenAI(
-            base_url=config.vllm_base_url,
-            api_key=api_key,
-        )
 
     try:
         t0 = time.time()
@@ -343,25 +340,25 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # Generator for real-time updates
         print("DEBUG: Executing simulation loop...")
         for tick in engine.run_generator():
-            # Throttle UI updates for smoother animation (especially for offline mode)
-            if not use_llm:
-                time.sleep(0.05)
-            
-            # Progress update
-            p_val = tick / int(num_ticks)
-            desc = f"Simulating market dynamics... {tick}/{num_ticks}"
-            
-            # Build current results for real-time display
-            ticks_data = engine.csv_rows
-            pnl_data = engine.agent_pnl_rows
-            
-            if ticks_data:
-                main_chart = build_main_chart(ticks_data)
-                pnl_chart = build_pnl_chart(pnl_data, agents)
-                leaderboard = build_leaderboard(pnl_data, ticks_data)
-                stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
+            # Throttled UI updates (every 2 ticks) for smoother animation and better browser performance
+            if tick % 2 == 0 or tick == int(num_ticks):
+                # Progress update
+                desc = f"Simulating market dynamics... {tick}/{num_ticks}"
                 
-                yield main_chart, pnl_chart, leaderboard, stats_html, None
+                # Build current results for real-time display
+                ticks_data = engine.csv_rows
+                pnl_data = engine.agent_pnl_rows
+                
+                if ticks_data:
+                    main_chart = build_main_chart(ticks_data)
+                    pnl_chart = build_pnl_chart(pnl_data, agents)
+                    leaderboard = build_leaderboard(pnl_data, ticks_data)
+                    stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
+                    
+                    yield main_chart, pnl_chart, leaderboard, stats_html, None
+                
+                # Small sleep to allow Gradio's websocket to flush the update
+                time.sleep(0.01)
         
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
@@ -551,30 +548,24 @@ def create_app():
                 use_llm = gr.Checkbox(label="Live LLM Mode", value=False,
                                       info="Check this to use external API for live inference")
 
-                with gr.Accordion("Live LLM Settings (Click to Expand)", open=False):
+                with gr.Accordion("🔑 Live LLM Settings", open=True) as llm_settings:
                     engine_preset = gr.Radio(
                         ["AMD Cloud (vLLM)", "Groq (Demo Mode)"],
                         label="Infrastructure Preset",
                         value="AMD Cloud (vLLM)"
                     )
                     api_key = gr.Textbox(label="API Key", type="password",
-                                          placeholder="hf_... or gsk_...")
-                    hf_model = gr.Textbox(label="Model ID", value="Qwen/Qwen2.5-7B-Instruct")
+                                          placeholder="hf_... or gsk_...", interactive=True)
+                    hf_model = gr.Textbox(label="Model ID", value="Qwen/Qwen2.5-7B-Instruct", interactive=True)
                     vllm_url = gr.Textbox(label="Inference Base URL", 
                                           value="https://api-inference.huggingface.co/v1",
-                                          placeholder="http://YOUR_AMD_IP:8000/v1")
+                                          placeholder="http://YOUR_AMD_IP:8000/v1", interactive=True)
 
                 def update_preset(preset):
                     if preset == "Groq (Demo Mode)":
-                        return (
-                            gr.update(value="llama-3.1-8b-instant"), 
-                            gr.update(value="https://api.groq.com/openai/v1")
-                        )
+                        return "llama-3.1-8b-instant", "https://api.groq.com/openai/v1"
                     else:
-                        return (
-                            gr.update(value="Qwen/Qwen2.5-7B-Instruct"),
-                            gr.update(value="https://api-inference.huggingface.co/v1")
-                        )
+                        return "Qwen/Qwen2.5-7B-Instruct", "https://api-inference.huggingface.co/v1"
 
                 engine_preset.change(
                     fn=update_preset,
