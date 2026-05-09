@@ -210,6 +210,8 @@ class SimulationEngine:
         """
         if self.config.use_llm and self.tick > self.config.warmup_ticks:
             print(f"DEBUG: Tick {self.tick} - DISPATCHING LLM AGENTS (Model: {self.config.vllm_model})")
+            # Sleep slightly to prevent hammering free tier APIs (like Groq) and hitting immediate 429s
+            await asyncio.sleep(1.0)
             return await self._dispatch_llm()
         else:
             mode = "WARMUP" if self.config.use_llm else "OFFLINE"

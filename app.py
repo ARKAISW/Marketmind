@@ -547,9 +547,9 @@ def create_app():
 
                 with gr.Accordion("🔑 Live LLM Settings", open=True) as llm_settings:
                     engine_preset = gr.Radio(
-                        ["AMD Cloud (vLLM)", "Groq (Demo Mode)"],
+                        ["AMD Cloud / HF", "Groq", "Together AI", "Google Gemini", "Local (vLLM/Ollama)", "Custom"],
                         label="Infrastructure Preset",
-                        value="AMD Cloud (vLLM)"
+                        value="AMD Cloud / HF"
                     )
                     api_key = gr.Textbox(label="API Key", type="password",
                                           placeholder="hf_... or gsk_...", interactive=True)
@@ -559,8 +559,16 @@ def create_app():
                                           placeholder="http://YOUR_AMD_IP:8000/v1", interactive=True)
 
                 def update_preset(preset):
-                    if preset == "Groq (Demo Mode)":
+                    if preset == "Groq":
                         return "llama-3.1-8b-instant", "https://api.groq.com/openai/v1"
+                    elif preset == "Together AI":
+                        return "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "https://api.together.xyz/v1"
+                    elif preset == "Google Gemini":
+                        return "gemini-1.5-flash", "https://generativelanguage.googleapis.com/v1beta/openai/"
+                    elif preset == "Local (vLLM/Ollama)":
+                        return "llama3", "http://localhost:8000/v1"
+                    elif preset == "Custom":
+                        return "", ""
                     else:
                         return "Qwen/Qwen2.5-7B-Instruct", "https://api-inference.huggingface.co/v1"
 
@@ -579,7 +587,7 @@ def create_app():
 
                 gr.HTML('<div class="panel-header">🔧 Parameters</div>')
                 num_ticks = gr.Slider(20, 500, value=150, step=10, label="Simulation Ticks")
-                warmup_ticks = gr.Slider(0, 50, value=15, step=5, label="Market Warm-up (Ticks)",
+                warmup_ticks = gr.Slider(0, 50, value=5, step=5, label="Market Warm-up (Ticks)",
                                          info="Establishing baseline before LLMs take over")
                 volatility = gr.Slider(0.0, 0.05, value=0.005, step=0.001,
                                        label="Market Volatility")

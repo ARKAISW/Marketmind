@@ -127,53 +127,64 @@ class VLLMClient:
     async def infer(self, system_prompt: str, user_message: str) -> LLMResponse:
         """Single inference call. Returns parsed LLMResponse."""
         t0 = time.perf_counter()
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-            raw_text = response.choices[0].message.content or ""
-            latency_ms = (time.perf_counter() - t0) * 1000
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    response_format={"type": "json_object"},
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                )
+                raw_text = response.choices[0].message.content or ""
+                latency_ms = (time.perf_counter() - t0) * 1000
 
-            parsed = parse_llm_output(raw_text)
-            if parsed is None:
+                parsed = parse_llm_output(raw_text)
+                if parsed is None:
+                    return LLMResponse(
+                        action="hold", price=0.0, quantity=0,
+                        raw_text=raw_text, latency_ms=latency_ms, success=False,
+                        orders=[]
+                    )
+
+                if "orders" in parsed:
+                    return LLMResponse(
+                        action="orders", price=0.0, quantity=0,
+                        raw_text=raw_text, latency_ms=latency_ms, success=True,
+                        orders=parsed["orders"]
+                    )
+
                 return LLMResponse(
-                    action="hold", price=0.0, quantity=0,
-                    raw_text=raw_text, latency_ms=latency_ms, success=False,
+                    action=parsed["action"],
+                    price=parsed["price"],
+                    quantity=parsed["quantity"],
+                    raw_text=raw_text,
+                    latency_ms=latency_ms,
+                    success=True,
                     orders=[]
                 )
 
-            if "orders" in parsed:
+            except Exception as e:
+                error_str = str(e).lower()
+                if "429" in error_str or "rate limit" in error_str or "503" in error_str:
+                    if attempt < max_retries - 1:
+                        sleep_time = 2 ** attempt
+                        print(f"API Rate Limited. Retrying in {sleep_time}s...")
+                        await asyncio.sleep(sleep_time)
+                        continue
+                
+                latency_ms = (time.perf_counter() - t0) * 1000
+                print(f"LLM API Error for {self.model}: {e}")
                 return LLMResponse(
-                    action="orders", price=0.0, quantity=0,
-                    raw_text=raw_text, latency_ms=latency_ms, success=True,
-                    orders=parsed["orders"]
+                    action="hold", price=0.0, quantity=0,
+                    raw_text=f"ERROR: {e}", latency_ms=latency_ms, success=False,
+                    orders=[]
                 )
-
-            return LLMResponse(
-                action=parsed["action"],
-                price=parsed["price"],
-                quantity=parsed["quantity"],
-                raw_text=raw_text,
-                latency_ms=latency_ms,
-                success=True,
-                orders=[]
-            )
-
-        except Exception as e:
-            latency_ms = (time.perf_counter() - t0) * 1000
-            print(f"LLM API Error for {self.model}: {e}")
-            return LLMResponse(
-                action="hold", price=0.0, quantity=0,
-                raw_text=f"ERROR: {e}", latency_ms=latency_ms, success=False,
-                orders=[]
-            )
 
     async def batch_infer(
         self, requests: list[tuple[str, str, str]]
