@@ -404,9 +404,13 @@ class SimulationEngine:
 
     def _record_csv_row(self, tick: int, metrics: TickMetrics, trades: list[Trade]):
         """Record a row for the tick-level CSV."""
+        # Use mid_price if available, else last known price
+        current_price = metrics.mid_price if metrics.mid_price else self.price_history[-1]
+        
         self.csv_rows.append({
             "tick": tick,
-            "mid_price": metrics.mid_price,
+            "price": current_price,
+            "mid_price": current_price, # keep for compat
             "best_bid": metrics.best_bid,
             "best_ask": metrics.best_ask,
             "spread": metrics.spread,
