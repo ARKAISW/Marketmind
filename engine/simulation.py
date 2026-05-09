@@ -427,6 +427,7 @@ class SimulationEngine:
                 "cash": round(agent.state.cash, 2),
                 "pnl": round(agent.mark_to_market(current_price), 2),
                 "trades": agent.state.trades_count,
+                "win_rate": agent.win_rate,
             })
 
     def _write_csvs(self):

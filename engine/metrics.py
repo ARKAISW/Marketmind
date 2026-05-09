@@ -6,7 +6,45 @@ Used by the simulation loop to track market health and by the dashboard for disp
 """
 
 import math
+import numpy as np
 from dataclasses import dataclass, field
+
+
+def calculate_sharpe_ratio(pnl_series: list[float], risk_free_rate: float = 0.0) -> float:
+    """Calculate the Sharpe Ratio of a PnL series."""
+    if len(pnl_series) < 5:
+        return 0.0
+    returns = np.diff(pnl_series)
+    if len(returns) == 0 or np.std(returns) == 0:
+        return 0.0
+    return float(np.mean(returns - risk_free_rate) / np.std(returns) * np.sqrt(252)) # Annualized
+
+
+def calculate_max_drawdown(pnl_series: list[float]) -> float:
+    """Calculate the maximum drawdown percentage from a PnL series."""
+    if not pnl_series:
+        return 0.0
+    # Start with initial capital + pnl
+    capital = 10_000.0
+    equity = [capital + p for p in pnl_series]
+    peak = equity[0]
+    max_dd = 0.0
+    for value in equity:
+        if value > peak:
+            peak = value
+        dd = (peak - value) / peak if peak > 0 else 0
+        if dd > max_dd:
+            max_dd = dd
+    return float(max_dd)
+
+
+def calculate_win_rate(pnl_series: list[float]) -> float:
+    """Calculate the percentage of profitable ticks."""
+    if len(pnl_series) < 2:
+        return 0.0
+    returns = np.diff(pnl_series)
+    wins = len([r for r in returns if r > 0])
+    return float(wins / len(returns)) if len(returns) > 0 else 0.0
 
 
 @dataclass

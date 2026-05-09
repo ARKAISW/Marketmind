@@ -13,6 +13,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import gradio as gr
+from datetime import datetime
 
 # Ensure imports work from this directory
 sys.path.insert(0, os.path.dirname(__file__))
@@ -202,32 +203,45 @@ def build_pnl_chart(pnl_data, agents):
     return fig
 
 
-def build_leaderboard(pnl_data, ticks_data):
-    """Build final leaderboard as a DataFrame."""
-    if not pnl_data or not ticks_data:
+def build_leaderboard(agent_pnl_rows, ticks_data):
+    """Create a pandas dataframe for the agent leaderboard with advanced metrics."""
+    from engine.metrics import calculate_sharpe_ratio, calculate_max_drawdown, calculate_win_rate
+    
+    if not agent_pnl_rows:
         return pd.DataFrame()
 
-    last_tick = ticks_data[-1]["tick"]
-    final_rows = [r for r in pnl_data if r["tick"] == last_tick]
+    # Map of agent_id -> list of PnL values
+    pnl_map = {}
+    for row in agent_pnl_rows:
+        aid = row["agent_id"]
+        if aid not in pnl_map:
+            pnl_map[aid] = []
+        pnl_map[aid].append(row["pnl"])
 
-    records = []
-    for r in sorted(final_rows, key=lambda x: x["pnl"], reverse=True):
-        pnl = r["pnl"]
-        emoji = "🟢" if pnl > 0 else "🔴" if pnl < 0 else "⚪"
-        records.append({
-            "": emoji,
-            "Agent": r["agent_id"],
-            "Type": r["agent_type"],
-            "PnL": f"${pnl:+,.2f}",
-            "Position": r["position"],
-            "Trades": r["trades"],
+    leaderboard_data = []
+    for aid, pnl_series in pnl_map.items():
+        final_pnl = pnl_series[-1]
+        sharpe = calculate_sharpe_ratio(pnl_series)
+        mdd = calculate_max_drawdown(pnl_series)
+        wr = calculate_win_rate(pnl_series)
+        
+        leaderboard_data.append({
+            "Agent ID": aid,
+            "Total PnL": f"${final_pnl:,.2f}",
+            "Sharpe": f"{sharpe:.2f}",
+            "Max DD": f"{mdd:.1%}",
+            "Win Rate": f"{wr:.1%}"
         })
 
-    return pd.DataFrame(records)
+    df = pd.DataFrame(leaderboard_data)
+    if not df.empty:
+        df = df.sort_values(by="Total PnL", ascending=False)
+    return df
 
 
 def build_stats_html(ticks_data, pnl_data, elapsed):
     """Build the live stats panel as HTML."""
+    from datetime import datetime
     if not ticks_data:
         return "<p>No data</p>"
 
@@ -239,6 +253,7 @@ def build_stats_html(ticks_data, pnl_data, elapsed):
     total_trades = sum(r["trade_count"] for r in ticks_data)
     avg_spread = np.mean([r["spread"] for r in ticks_data if r["spread"]]) if ticks_data else 0
     regime = last.get("regime", "Unknown")
+    timestamp = datetime.now().strftime("%H:%M:%S")
 
     regime_colors = {
         "Efficient": "#00ff88",
@@ -249,21 +264,10 @@ def build_stats_html(ticks_data, pnl_data, elapsed):
     rc = regime_colors.get(regime, "#8892b0")
 
     return f"""
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-        <div class="stat-card">
-            <div class="stat-label">FINAL PRICE</div>
-            <div class="stat-value">${last_price:,.2f}</div>
-            <div class="stat-delta" style="color: {'#00ff88' if pct_change >= 0 else '#ff3366'};">
-                {pct_change:+.2f}%
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">REGIME</div>
-            <div class="stat-value" style="color: {rc};">{regime}</div>
-        </div>
+    <div class="stats-container" style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
         <div class="stat-card">
             <div class="stat-label">TOTAL TRADES</div>
-            <div class="stat-value">{total_trades:,}</div>
+            <div class="stat-value">{total_trades}</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">VOLUME</div>
@@ -274,8 +278,8 @@ def build_stats_html(ticks_data, pnl_data, elapsed):
             <div class="stat-value">{avg_spread:.4f}</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">SIM TIME</div>
-            <div class="stat-value">{elapsed:.1f}s</div>
+            <div class="stat-label">LAST UPDATE</div>
+            <div class="stat-value">{datetime.now().strftime('%H:%M:%S')}</div>
         </div>
     </div>
     """
@@ -317,6 +321,15 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
 
     t0 = time.time()
     
+    # Ensure output directory exists for CSV generation
+    os.makedirs(config.output_dir, exist_ok=True)
+    
+    # Initialize empty outputs
+    main_chart = None
+    pnl_chart = None
+    leaderboard = pd.DataFrame()
+    stats_html = "<p>Running...</p>"
+    
     # Use generator to yield live updates
     for tick in engine.run_generator():
         progress(tick / int(num_ticks), desc=f"Running tick {tick}/{num_ticks}...")
@@ -331,7 +344,17 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
             leaderboard = build_leaderboard(pnl_data, ticks_data)
             stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
             
-            yield main_chart, pnl_chart, leaderboard, stats_html
+            # Create temporary export file
+            export_path = "marketmind_simulation.csv"
+            pd.DataFrame(ticks_data).to_csv(export_path, index=False)
+            
+            yield main_chart, pnl_chart, leaderboard, stats_html, export_path
+
+    # After simulation is done, write CSVs and update files
+    engine._write_csvs()
+    
+    # Final yield
+    yield main_chart, pnl_chart, leaderboard, stats_html, export_path
 
 
 # ─── CUSTOM CSS ───────────────────────────────────────────────────
@@ -528,6 +551,9 @@ def create_app():
                 # Stats panel (populated after simulation)
                 gr.HTML('<div class="panel-header">📊 Session Stats</div>')
                 stats_panel = gr.HTML("<p style='color:#5a6785;text-align:center;padding:20px;'>Run a simulation to see stats</p>")
+                
+                gr.HTML('<div class="panel-header">💾 Export Data</div>')
+                export_file = gr.File(label="📥 Download Tick Data (CSV)", interactive=False)
 
             # ══════════════════════════════════════════════
             # RIGHT PANEL — Charts & Results
@@ -537,7 +563,7 @@ def create_app():
                 main_chart = gr.Plot(label="Market Overview", elem_classes=["chart-panel"])
                 pnl_chart = gr.Plot(label="Agent PnL Tracker")
                 leaderboard = gr.DataFrame(
-                    label="🏆 Final Leaderboard",
+                    label="🏆 Global Performance Metrics",
                     interactive=False,
                     wrap=True,
                 )
@@ -547,7 +573,7 @@ def create_app():
             fn=run_simulation,
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
                     num_ticks, warmup_ticks, volatility, use_llm, hf_token, hf_model, vllm_url],
-            outputs=[main_chart, pnl_chart, leaderboard, stats_panel],
+            outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file],
         )
 
     return app

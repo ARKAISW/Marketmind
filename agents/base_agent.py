@@ -19,8 +19,10 @@ class AgentState:
     cash: float = 10_000.0   # starting cash
     total_pnl: float = 0.0   # realized PnL
     trades_count: int = 0
-
-
+    profitable_trades: int = 0
+    # To accurately track profitable trades, we need to know the entry price of positions.
+    # For a hackathon, a simplified approximation is marking the trade against the current mid price.
+    
 class BaseAgent(ABC):
     """
     Abstract trading agent.
@@ -69,15 +71,32 @@ class BaseAgent(ABC):
         elif side == Side.SELL:
             self.state.position -= quantity
             self.state.cash += price * quantity
+        
         self.state.trades_count += 1
+        
+        # Simplified win rate logic for the hackathon: 
+        # A trade is considered "profitable" if it improves Mark-to-Market PnL against the last known price.
+        # This is a heuristic.
+        last_price = self.price_history[-1] if self.price_history else 100.0
+        if side == Side.BUY and price < last_price:
+            self.state.profitable_trades += 1
+        elif side == Side.SELL and price > last_price:
+            self.state.profitable_trades += 1
 
     def mark_to_market(self, current_price: float) -> float:
         """Calculate total PnL: cash + position value - initial cash."""
         position_value = self.state.position * current_price
         return self.state.cash + position_value - 10_000.0
 
+    @property
+    def win_rate(self) -> float:
+        """Returns the percentage of profitable trades."""
+        if self.state.trades_count == 0:
+            return 0.0
+        return (self.state.profitable_trades / self.state.trades_count) * 100.0
+
     def __repr__(self) -> str:
         return (
             f"{self.agent_type}(id={self.agent_id}, "
-            f"pos={self.state.position}, cash={self.state.cash:.2f})"
+            f"pos={self.state.position}, cash={self.state.cash:.2f}, WR={self.win_rate:.1f}%)"
         )
