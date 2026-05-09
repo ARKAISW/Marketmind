@@ -347,15 +347,20 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
                 pnl_data = engine.agent_pnl_rows
                 
                 if ticks_data:
+                    # Update progress bar
+                    progress(tick / int(num_ticks), desc=f"Tick {tick}/{num_ticks} - {engine.metrics.classify_regime()}")
+                    
                     main_chart = build_main_chart(ticks_data)
                     pnl_chart = build_pnl_chart(pnl_data, agents)
                     leaderboard = build_leaderboard(pnl_data, ticks_data)
                     stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
                     
-                    yield main_chart, pnl_chart, leaderboard, stats_html, None
+                    status_msg = f"🟢 Simulation Running: Tick {tick}/{num_ticks} | Current Price: ${ticks_data[-1]['mid_price']:.2f}"
+                    
+                    yield main_chart, pnl_chart, leaderboard, stats_html, None, status_msg
                 
                 # IMPORTANT: Significant sleep to ensure the UI has time to render the live state
-                time.sleep(0.2)
+                time.sleep(0.4) 
         
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
@@ -375,7 +380,8 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # After simulation is done, write CSVs
         engine._write_csvs()
         
-        yield main_chart, pnl_chart, leaderboard, stats_html, export_path
+        status_msg = "✅ Simulation Complete"
+        yield main_chart, pnl_chart, leaderboard, stats_html, export_path, status_msg
     except Exception as e:
         print(f"CRITICAL ERROR in run_simulation: {str(e)}")
         import traceback
@@ -593,6 +599,7 @@ def create_app():
                                        label="Market Volatility")
 
                 run_btn = gr.Button("▶  Execute Simulation", variant="primary", size="lg")
+                live_status = gr.Markdown("Ready to simulate...")
 
                 # Stats panel (populated after simulation)
                 gr.HTML('<div class="panel-header">📊 Session Stats</div>')
@@ -619,7 +626,7 @@ def create_app():
             fn=run_simulation,
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
                     num_ticks, warmup_ticks, volatility, use_llm, api_key, hf_model, vllm_url],
-            outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file],
+            outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file, live_status],
         )
 
     return app
