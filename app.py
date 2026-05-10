@@ -314,7 +314,10 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
     print(f"DEBUG: Starting simulation - LLM: {use_llm}, URL: {vllm_url}")
     
     if use_llm and not api_key.strip():
-        raise gr.Error("API Key is required when Live LLM Mode is enabled. Please expand 'Live LLM Settings' and provide your key.")
+        # Only require API key if not a local address
+        is_local = "localhost" in vllm_url or "127.0.0.1" in vllm_url or "0.0.0.0" in vllm_url
+        if not is_local:
+            raise gr.Error("API Key is required when Live LLM Mode is enabled for remote providers.")
 
     agents = build_agents(int(n_mom), int(n_mr), int(n_fund), int(n_noise), int(n_mm))
     if not agents:
@@ -362,16 +365,25 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
                     leaderboard = build_leaderboard(pnl_data, ticks_data)
                     stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
                     
-                    status_msg = f"🟢 Simulation Running: Tick {tick}/{num_ticks} | Current Price: ${ticks_data[-1]['mid_price']:.2f}"
+                    # Build status message with API health check
+                    api_status = "🟢 API OK"
+                    if use_llm and engine.llm_client and engine.llm_client.error_count > 0:
+                        api_status = f"🔴 API ERROR ({engine.llm_client.error_count})"
+                    
+                    status_msg = f"Simulation: Tick {tick}/{num_ticks} | {api_status} | Price: ${ticks_data[-1]['mid_price']:.2f}"
                     
                     yield main_chart, pnl_chart, leaderboard, stats_html, None, status_msg
                 
                 # IMPORTANT: Significant sleep on heuristic ticks to allow Gradio websocket to flush.
-                # 0.5s creates a smooth, readable 'cinematic' update.
                 if not is_llm_tick:
                     time.sleep(0.5) 
                 else:
-                    time.sleep(0.01) # LLM is naturally slow enough
+                    # If LLM is erroring out, it will be very fast. 
+                    # We add a floor to ensure UI responsiveness and visibility of error status.
+                    if engine.llm_client and engine.llm_client.error_count > 0:
+                        time.sleep(1.0)
+                    else:
+                        time.sleep(0.01) 
         
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
@@ -526,6 +538,38 @@ footer {
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.85em !important;
 }
+/* -- Checkbox Pop -- */
+input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 20px;
+    width: 20px;
+    background-color: rgba(0,212,255,0.1);
+    border: 2px solid #00d4ff !important;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-block;
+    position: relative;
+    vertical-align: middle;
+}
+input[type="checkbox"]:checked {
+    background-color: #00d4ff !important;
+    box-shadow: 0 0 10px rgba(0,212,255,0.5);
+}
+input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    color: #0a0b10;
+    font-size: 14px;
+    font-weight: 800;
+    left: 4px;
+    top: -2px;
+}
+.dark label span {
+    color: #00d4ff !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.5px;
+}
 
 /* ── Scrollbar ──────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
@@ -649,7 +693,6 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.launch(
-        server_name="0.0.0.0",
         server_port=7860,
         css=CUSTOM_CSS,
         theme=gr.themes.Base(

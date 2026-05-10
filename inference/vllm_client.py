@@ -119,10 +119,20 @@ class VLLMClient:
         max_tokens: int = 64,
         temperature: float = 0.8,
     ):
-        self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
+        # Auto-fix common URL mistakes (like missing /v1 for Ollama/vLLM)
+        base_url = base_url.strip()
+        if base_url and not base_url.endswith("/v1") and not base_url.endswith("/v1/"):
+            if base_url.endswith("/"):
+                base_url += "v1"
+            else:
+                base_url += "/v1"
+        
+        print(f"INFO: Initializing VLLMClient - Model: {model} | Base URL: {base_url}")
+        self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=10.0)
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self.error_count = 0  # Track consecutive errors
 
     async def infer(self, system_prompt: str, user_message: str) -> LLMResponse:
         """Single inference call. Returns parsed LLMResponse."""
@@ -143,6 +153,7 @@ class VLLMClient:
                 )
                 raw_text = response.choices[0].message.content or ""
                 latency_ms = (time.perf_counter() - t0) * 1000
+                self.error_count = 0 # Reset on success
 
                 parsed = parse_llm_output(raw_text)
                 if parsed is None:
@@ -180,6 +191,7 @@ class VLLMClient:
                 
                 latency_ms = (time.perf_counter() - t0) * 1000
                 print(f"LLM API Error for {self.model}: {e}")
+                self.error_count += 1
                 return LLMResponse(
                     action="hold", price=0.0, quantity=0,
                     raw_text=f"ERROR: {e}", latency_ms=latency_ms, success=False,
