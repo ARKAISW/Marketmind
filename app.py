@@ -348,10 +348,9 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         # Generator for real-time updates
         print(f"DEBUG: Executing simulation loop - LLM Mode: {use_llm}")
         for tick in engine.run_generator():
-            # Throttled UI updates (every 10 ticks for maximum smoothness and 'cinematic' feel)
             is_llm_tick = use_llm and tick > int(warmup_ticks)
-            
-            if tick % 10 == 0 or tick == 1 or tick == int(num_ticks):
+            # Update UI every tick for a "live" feel
+            if True: 
                 # Build current results for real-time display
                 ticks_data = engine.csv_rows
                 pnl_data = engine.agent_pnl_rows
@@ -374,17 +373,12 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
                     
                     yield main_chart, pnl_chart, leaderboard, stats_html, None, status_msg
                 
-                # IMPORTANT: Significant sleep on heuristic ticks to allow Gradio websocket to flush.
+                # Small sleep on heuristic ticks for 'cinematic' flow, but fast enough to feel alive
                 if not is_llm_tick:
-                    time.sleep(0.5) 
+                    time.sleep(0.1) 
                 else:
-                    # If LLM is erroring out, it will be very fast. 
-                    # We add a floor to ensure UI responsiveness and visibility of error status.
-                    if engine.llm_client and engine.llm_client.error_count > 0:
-                        time.sleep(1.0)
-                    else:
-                        time.sleep(0.01) 
-        
+                    # Minimal overhead for LLM ticks since they already have network latency
+                    time.sleep(0.01)        
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
         # Final build
@@ -681,8 +675,7 @@ def create_app():
             fn=run_simulation,
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
                     num_ticks, warmup_ticks, volatility, use_llm, api_key, hf_model, vllm_url],
-            outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file, live_status],
-            show_progress="hidden"
+            outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file, live_status]
         )
 
     return app
