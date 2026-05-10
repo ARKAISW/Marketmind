@@ -685,7 +685,7 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.launch(
+    app.queue(default_concurrency_limit=5).launch(
         server_port=7860,
         css=CUSTOM_CSS,
         theme=gr.themes.Base(
