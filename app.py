@@ -349,56 +349,82 @@ def run_simulation(n_mom, n_mr, n_fund, n_noise, n_mm,
         print(f"DEBUG: Executing simulation loop - LLM Mode: {use_llm}")
         for tick in engine.run_generator():
             is_llm_tick = use_llm and tick > int(warmup_ticks)
-            # Update UI every tick for a "live" feel
-            if True: 
-                # Build current results for real-time display
+
+            # LinePlot streams perfectly, so we can yield every tick without flickering!
+            if True:
                 ticks_data = engine.csv_rows
                 pnl_data = engine.agent_pnl_rows
-                
+
                 if ticks_data:
-                    # Update progress bar
-                    progress(tick / int(num_ticks), desc=f"Tick {tick}/{num_ticks} - {engine.metrics.classify_regime()}")
+
+                    import pandas as pd
+                    raw_df = pd.DataFrame(ticks_data)
                     
-                    main_chart = build_main_chart(ticks_data)
-                    pnl_chart = build_pnl_chart(pnl_data, agents)
+                    # Melt price data with human-readable legend labels
+                    main_df = raw_df.drop(columns=['price'], errors='ignore').melt(
+                        id_vars=['tick'], 
+                        value_vars=['mid_price', 'true_fair_value'],
+                        var_name='metric', 
+                        value_name='price'
+                    )
+                    main_df['metric'] = main_df['metric'].map({
+                        'mid_price': '📈 Mid Price',
+                        'true_fair_value': '🎯 Fair Value'
+                    })
+                    
+                    spread_df = raw_df[['tick', 'spread']].copy()
+                    volume_df = raw_df[['tick', 'volume']].copy()
+                    
+                    pnl_df = pd.DataFrame(pnl_data)
+                    
                     leaderboard = build_leaderboard(pnl_data, ticks_data)
                     stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
-                    
-                    # Build status message with API health check
-                    api_status = "🟢 API OK"
-                    if use_llm and engine.llm_client and engine.llm_client.error_count > 0:
-                        api_status = f"🔴 API ERROR ({engine.llm_client.error_count})"
-                    
-                    status_msg = f"Simulation: Tick {tick}/{num_ticks} | {api_status} | Price: ${ticks_data[-1]['mid_price']:.2f}"
-                    
-                    yield main_chart, pnl_chart, leaderboard, stats_html, None, status_msg
-                
-                # Small sleep on heuristic ticks for 'cinematic' flow, but fast enough to feel alive
-                if not is_llm_tick:
-                    time.sleep(0.1) 
-                else:
-                    # Minimal overhead for LLM ticks since they already have network latency
-                    time.sleep(0.01)        
+
+                api_status = "🟢 API OK"
+                if use_llm and engine.llm_client and engine.llm_client.error_count > 0:
+                    api_status = f"🔴 API ERROR ({engine.llm_client.error_count})"
+
+                # Clean status message for demo (no tick count)
+                status_msg = f"{api_status} | Market Status: {engine.metrics.classify_regime()} | Current Price: ${ticks_data[-1]['mid_price']:.2f}"
+
+                yield main_df, pnl_df, spread_df, volume_df, leaderboard, stats_html, None, status_msg
+
+            # Slower sleep (0.2s) for a more cinematic, less 'jittery' feel
+            if not is_llm_tick:
+                time.sleep(0.2)
+            else:
+                time.sleep(0.05)        
         print(f"DEBUG: Simulation complete in {time.time()-t0:.2f}s")
         
         # Final build
         ticks_data = engine.csv_rows
         pnl_data = engine.agent_pnl_rows
         
-        main_chart = build_main_chart(ticks_data)
-        pnl_chart = build_pnl_chart(pnl_data, agents)
+        import pandas as pd
+        raw_df = pd.DataFrame(ticks_data)
+        main_df = raw_df.drop(columns=['price'], errors='ignore').melt(
+            id_vars=['tick'], value_vars=['mid_price', 'true_fair_value'],
+            var_name='metric', value_name='price'
+        )
+        main_df['metric'] = main_df['metric'].map({
+            'mid_price': '📈 Mid Price',
+            'true_fair_value': '🎯 Fair Value'
+        })
+        spread_df = raw_df[['tick', 'spread']].copy()
+        volume_df = raw_df[['tick', 'volume']].copy()
+        pnl_df = pd.DataFrame(pnl_data)
         leaderboard = build_leaderboard(pnl_data, ticks_data)
         stats_html = build_stats_html(ticks_data, pnl_data, time.time() - t0)
         
         # Create temporary export file
         export_path = "marketmind_simulation.csv"
-        pd.DataFrame(ticks_data).to_csv(export_path, index=False)
+        raw_df.to_csv(export_path, index=False)
         
         # After simulation is done, write CSVs
         engine._write_csvs()
         
         status_msg = "✅ Simulation Complete"
-        yield main_chart, pnl_chart, leaderboard, stats_html, export_path, status_msg
+        yield main_df, pnl_df, spread_df, volume_df, leaderboard, stats_html, export_path, status_msg
     except Exception as e:
         print(f"CRITICAL ERROR in run_simulation: {str(e)}")
         import traceback
@@ -662,8 +688,41 @@ def create_app():
             # ══════════════════════════════════════════════
             with gr.Column(scale=3):
 
-                main_chart = gr.Plot(label="Market Overview", elem_classes=["chart-panel"])
-                pnl_chart = gr.Plot(label="Agent PnL Tracker")
+                main_chart = gr.LinePlot(
+                    label="Market Overview", 
+                    x="tick", 
+                    y="price", 
+                    color="metric",
+                    title="Live Mid Price vs Fair Value",
+                    tooltip=["tick", "metric", "price"],
+                    height=300
+                )
+                pnl_chart = gr.LinePlot(
+                    label="Agent PnL Tracker",
+                    x="tick",
+                    y="pnl",
+                    color="agent_id",
+                    title="Agent PnL (Mark-to-Market)",
+                    tooltip=["tick", "agent_id", "pnl"],
+                    height=300
+                )
+                with gr.Row():
+                    spread_chart = gr.LinePlot(
+                        label="Bid-Ask Spread",
+                        x="tick",
+                        y="spread",
+                        title="Spread",
+                        tooltip=["tick", "spread"],
+                        height=200
+                    )
+                    volume_chart = gr.BarPlot(
+                        label="Trade Volume",
+                        x="tick",
+                        y="volume",
+                        title="Volume per Tick",
+                        tooltip=["tick", "volume"],
+                        height=200
+                    )
                 leaderboard = gr.DataFrame(
                     label="🏆 Global Performance Metrics",
                     interactive=False,
@@ -675,9 +734,12 @@ def create_app():
             fn=run_simulation,
             inputs=[n_mom, n_mr, n_fund, n_noise, n_mm,
                     num_ticks, warmup_ticks, volatility, use_llm, api_key, hf_model, vllm_url],
-            outputs=[main_chart, pnl_chart, leaderboard, stats_panel, export_file, live_status]
+            outputs=[main_chart, pnl_chart, spread_chart, volume_chart, leaderboard, stats_panel, export_file, live_status]
         )
 
+    # Enable queuing for streaming/generator support — MUST be inside create_app
+    # so it works on HF Spaces (which import the app object directly)
+    app.queue(default_concurrency_limit=5)
     return app
 
 
@@ -685,7 +747,7 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.queue(default_concurrency_limit=5).launch(
+    app.launch(
         server_port=7860,
         css=CUSTOM_CSS,
         theme=gr.themes.Base(
